@@ -25,7 +25,7 @@ ws.AddHandler(webserver.NewHandler(webserver.MethodGet, webserver.StringPath("/a
 }))
 
 // Add a handler with a RegexPath that handles `/api*`
-ws.AddHandler(webserver.NewHandler(webserver.MethodAny, webserver.RegexPath(regexp.MustCompile("^\\/api.*&")), func(path string) (int, []byte) {
+ws.AddHandler(webserver.NewHandler(webserver.MethodAny, webserver.RegexPath(regexp.MustCompile("^/api.*$")), func(path string) (int, []byte) {
     return 200, []byte("Received request at " + path)
 }))
 ```
