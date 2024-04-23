@@ -30,7 +30,7 @@ ws.AddHandler(webserver.NewHandler(webserver.MethodAny, webserver.RegexPath(rege
 }))
 ```
 
-You can also add a default `StaticFiles` handler that will map requests to files in a specified files:
+You can also add a default `StaticFiles` handler that will map requests to files in a specified folder:
 
 ```go
 ws.StaticFiles("www")
