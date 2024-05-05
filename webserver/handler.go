@@ -7,18 +7,7 @@ import (
 	"path"
 )
 
-type Method string
-
-const (
-	MethodGet    Method = "GET"
-	MethodPost          = "POST"
-	MethodPut           = "PUT"
-	MethodPatch         = "PATCH"
-	MethodDelete        = "DELETE"
-	MethodAny           = "*"
-)
-
-type HandlerFunc func(path string) (int, []byte)
+type HandlerFunc func(request Request) Response
 
 type Handler struct {
 	method      Method
@@ -26,26 +15,26 @@ type Handler struct {
 	handler     HandlerFunc
 }
 
-func (h Handler) Matches(method string, path string) bool {
-	return (method == string(h.method) || h.method == MethodAny) && h.pathPattern.Matches(path)
+func (h *Handler) Matches(request Request) bool {
+	return (request.Method() == h.method || h.method == MethodAny) && h.pathPattern.Matches(request.Path())
 }
 
-func (h Handler) Execute(path string) (int, []byte) {
-	return h.handler(path)
+func (h *Handler) Execute(request Request) Response {
+	return h.handler(request)
 }
 
-func NewHandler(method Method, path Path, handler HandlerFunc) Handler {
-	return Handler{
+func NewHandler(method Method, path Path, handler HandlerFunc) *Handler {
+	return &Handler{
 		method:      method,
 		pathPattern: path,
 		handler:     handler,
 	}
 }
 
-func NewStaticFileHandler(wwwFilePath string) Handler {
-	return NewHandler(MethodGet, AnyPath(), func(requestPath string) (int, []byte) {
+func NewStaticFileHandler(wwwFilePath string) *Handler {
+	return NewHandler(MethodGet, AnyPath(), func(request Request) Response {
 		// First clean the path
-		cleanedRequestPath := path.Clean(requestPath)
+		cleanedRequestPath := path.Clean(request.Path())
 
 		// Account for `/`
 		if cleanedRequestPath == "/" {
@@ -58,19 +47,19 @@ func NewStaticFileHandler(wwwFilePath string) Handler {
 		// Check if the file exists and return a 404 if it doesn't
 		_, err := os.Stat(filePath)
 		if err != nil && errors.Is(err, os.ErrNotExist) {
-			return 404, nil
+			return NotFoundResponse()
 		} else if err != nil {
 			fmt.Printf("Internal error occurred while finding a static file: %v", err)
-			return 500, nil
+			return InternalErrorResponse()
 		}
 
 		// Read the file
 		fileContents, err := os.ReadFile(filePath)
 		if err != nil {
 			fmt.Printf("Internal error occurred while reading a static file: %v", err)
-			return 500, nil
+			return InternalErrorResponse()
 		}
 
-		return 200, fileContents
+		return OkResponseWithBody(fileContents)
 	})
 }

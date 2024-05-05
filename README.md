@@ -20,13 +20,13 @@ Once you've created a web server, you can attach handlers that will handle diffe
 
 ```go
 // Add a handler with a `StringPath` that handles `/api/test`
-ws.AddHandler(webserver.NewHandler(webserver.MethodGet, webserver.StringPath("/api/test"), func(path string) (int, []byte) {
-    return 200, []byte("Hello World!")
+ws.AddHandler(webserver.NewHandler(webserver.MethodGet, webserver.StringPath("/api/test"), func(request webserver.Request) webserver.Response {
+    return webserver.OkResponseWithBody([]byte("Hello, World!"))
 }))
 
 // Add a handler with a RegexPath that handles `/api*`
-ws.AddHandler(webserver.NewHandler(webserver.MethodAny, webserver.RegexPath(regexp.MustCompile("^/api.*$")), func(path string) (int, []byte) {
-    return 200, []byte("Received request at " + path)
+ws.AddHandler(webserver.NewHandler(webserver.MethodAny, webserver.RegexPath(regexp.MustCompile("^/api.*$")), func(request webserver.Request) webserver.Response {
+    return webserver.OkResponseWithBody([]byte("Received request at " + request.Path()))
 }))
 ```
 

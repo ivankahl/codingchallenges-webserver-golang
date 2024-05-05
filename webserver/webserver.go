@@ -3,13 +3,11 @@ package webserver
 import (
 	"fmt"
 	"net"
-	"strings"
 )
 
 type WebServer struct {
-	handlers                []Handler
-	defaultHandlerSpecified bool
-	defaultHandler          Handler
+	handlers       []*Handler
+	defaultHandler *Handler
 }
 
 var statusResponses = map[int]string{
@@ -22,7 +20,6 @@ var statusResponses = map[int]string{
 
 func (w *WebServer) StaticFiles(www string) {
 	w.defaultHandler = NewStaticFileHandler(www)
-	w.defaultHandlerSpecified = true
 }
 
 func (w *WebServer) Run(port int) error {
@@ -36,14 +33,14 @@ func (w *WebServer) Run(port int) error {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			fmt.Errorf("failed to accept request: %w", err)
+			return fmt.Errorf("failed to accept request: %w", err)
 		}
 
 		go w.handle(conn)
 	}
 }
 
-func (w *WebServer) AddHandler(handler Handler) {
+func (w *WebServer) AddHandler(handler *Handler) {
 	w.handlers = append(w.handlers, handler)
 }
 
@@ -51,37 +48,27 @@ func (w *WebServer) handle(conn net.Conn) {
 	defer conn.Close()
 
 	// By default, return an internal error if something goes wrong
-	statusCode := 500
-	headers := make(map[string]string)
-	content := make([]byte, 0)
+	response := InternalErrorResponse()
 
 	// Create a defer function that will write the response
 	defer func() {
-		err := writeResponse(conn, statusCode, headers, content)
+		err := writeResponse(conn, response)
 		if err != nil {
 			fmt.Printf("Error was returned while processing request: %v", err)
 		}
 	}()
 
-	// Parse the incoming request
-	body := make([]byte, 1024)
-	_, err := conn.Read(body)
+	request, err := parseRequest(conn)
 	if err != nil {
-		statusCode = 400
+		fmt.Printf("Request could not be parsed: %v", err)
 		return
 	}
-	bodyStr := string(body)
-
-	// Parse the body string
-	bodyParts := strings.Split(bodyStr, " ")
-	method := bodyParts[0]
-	requestPath := bodyParts[1]
 
 	// First look for an appropriate handler
 	handlerFound := false
-	var handler Handler
+	var handler *Handler
 	for _, h := range w.handlers {
-		if h.Matches(method, requestPath) {
+		if h.Matches(request) {
 			handler = h
 			handlerFound = true
 			break
@@ -89,20 +76,20 @@ func (w *WebServer) handle(conn net.Conn) {
 	}
 
 	// If we don't find a specific handler, assign either a 404 or default handler
-	if !handlerFound && !w.defaultHandlerSpecified {
-		handler = NewHandler(MethodAny, AnyPath(), func(path string) (int, []byte) {
-			fmt.Printf("Handler could not be found for %v", path)
-			return 404, nil
+	if !handlerFound && w.defaultHandler == nil {
+		handler = NewHandler(MethodAny, AnyPath(), func(request Request) Response {
+			fmt.Printf("Handler could not be found for %v", request.Path())
+			return NotFoundResponse()
 		})
 	} else if !handlerFound {
 		handler = w.defaultHandler
 	}
 
 	// Execute the handler and assign the results
-	statusCode, content = handler.Execute(requestPath)
+	response = handler.Execute(request)
 }
 
-func writeResponse(conn net.Conn, statusCode int, headers map[string]string, content []byte) (finalErr error) {
+func writeResponse(conn net.Conn, response Response) (finalErr error) {
 	defer func() {
 		// Handle any errors that might have occurred
 		if r := recover(); r != nil {
@@ -111,16 +98,17 @@ func writeResponse(conn net.Conn, statusCode int, headers map[string]string, con
 	}()
 
 	// Write the header
-	_ = mustReturn(conn.Write([]byte(fmt.Sprintf("HTTP/1.1 %v\r\n", statusResponses[statusCode]))))
+	_ = mustReturn(conn.Write([]byte(fmt.Sprintf("HTTP/1.1 %v\r\n", statusResponses[response.StatusCode()]))))
 
 	// Loop through each of the headers and add them
-	for k, v := range headers {
+	headersMap := response.Headers().GetAsMap()
+	for k, v := range headersMap {
 		_ = mustReturn(conn.Write([]byte(fmt.Sprintf("%v: %v\r\n", k, v))))
 	}
 
 	// Add the body
 	_ = mustReturn(conn.Write([]byte("\r\n")))
-	_ = mustReturn(conn.Write(content))
+	_ = mustReturn(conn.Write(response.Body()))
 
 	return
 }
@@ -133,16 +121,9 @@ func mustReturn[T interface{}](x T, err error) T {
 	return x
 }
 
-func must(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
 func NewWebServer() WebServer {
 	return WebServer{
-		handlers:                make([]Handler, 0, 10),
-		defaultHandlerSpecified: false,
-		defaultHandler:          Handler{},
+		handlers:       make([]*Handler, 0, 10),
+		defaultHandler: nil,
 	}
 }
